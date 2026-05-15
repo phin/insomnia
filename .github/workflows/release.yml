@@ -1,0 +1,43 @@
+name: Release
+
+# Builds, bundles, and publishes Insomnia.app when a version tag is pushed.
+#
+#   git tag v0.1.0 && git push --tags
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # needed to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Test
+        run: swift test
+
+      - name: Build and bundle
+        run: ./Bundle/bundle.sh release
+
+      - name: Zip the app
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ditto -c -k --keepParent dist/Insomnia.app "dist/Insomnia-${VERSION}.zip"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/Insomnia-${VERSION}.zip" \
+            --title "Insomnia ${VERSION}" \
+            --notes "See CHANGELOG.md. First launch needs the Gatekeeper step in docs/GATEKEEPER.md (this build is ad-hoc signed, not notarized)."
