@@ -3,6 +3,28 @@
 All notable changes to Insomnia are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.3.0
+
+### Added
+
+- **Closed-lid (clamshell) sleep prevention.** New *Closed-lid operation*
+  section in Settings — one checkbox runs `pmset -a disablesleep 1` via a
+  single admin password prompt, so your Mac stays awake on AC with the lid
+  shut. The checkbox state is sourced from `pmset -g`, so it reflects ground
+  truth even if you flip the flag from a terminal.
+- **Onboarding prompt** for closed-lid mode. After picking agents on first
+  launch, Insomnia explicitly asks if you'd also like to enable closed-lid
+  sleep prevention, with the caveats up front.
+- **Status section** at the top of Settings — live *Keeping Mac awake* /
+  *Idle* headline plus the active session list, refreshed every reconcile.
+
+### Changed
+
+- README: replaced the short *Limitations* list with explicit *Where it works
+  / Where it doesn't* tables, a *Closed-lid workarounds* section covering both
+  the external-display recipe and the `pmset` flag, and a one-paragraph diff
+  vs Apple's built-in `caffeinate`.
+
 ## 0.2.0
 
 ### Added
