@@ -23,6 +23,10 @@ license.
 
 ## How it works
 
+<p align="center">
+  <img src="docs/images/menu.png" alt="The Insomnia menu bar dropdown showing 'Keeping Mac awake' with three active Claude Code sessions" width="460">
+</p>
+
 ```
 agent CLI ──hook──▶ insomnia-hook ──writes──▶ session state files
                                                      │
