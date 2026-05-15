@@ -23,6 +23,7 @@ echo "Assembling ${APP}..."
 rm -rf "${APP}"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp Bundle/Info.plist    "${APP}/Contents/Info.plist"
+cp Bundle/AppIcon.icns  "${APP}/Contents/Resources/AppIcon.icns"
 cp "${BIN}/Insomnia"      "${APP}/Contents/MacOS/Insomnia"
 cp "${BIN}/insomnia-hook" "${APP}/Contents/MacOS/insomnia-hook"
 

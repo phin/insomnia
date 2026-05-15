@@ -52,7 +52,7 @@ final class StatusItemController: NSObject {
     // MARK: - Icon
 
     private static func icon(awake: Bool) -> NSImage? {
-        let name = awake ? "cup.and.saucer.fill" : "cup.and.saucer"
+        let name = awake ? "eye.fill" : "eye"
         let image = NSImage(
             systemSymbolName: name,
             accessibilityDescription: awake ? "Keeping Mac awake" : "Idle")

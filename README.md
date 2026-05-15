@@ -1,5 +1,9 @@
 # Insomnia
 
+<p align="center">
+  <img src="docs/images/hero.jpg" alt="Insomnia — keep your Mac awake while AI agents work" width="720">
+</p>
+
 **Keep your Mac awake while an AI coding agent is working.**
 
 When Claude Code, Codex, or Gemini CLI is grinding through a long autonomous
@@ -59,7 +63,7 @@ each integration for you (and never clobbers your existing config — see
    it detects. You can also toggle agents anytime from the menu (**Follow …**).
 5. **Restart any running agent sessions** so they pick up the new hooks.
 
-That's it — a coffee-cup icon appears in your menu bar. It fills in when Insomnia
+That's it — an eye icon appears in your menu bar. It opens fully when Insomnia
 is keeping the Mac awake.
 
 ## Build from source
