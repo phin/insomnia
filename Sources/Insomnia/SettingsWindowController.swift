@@ -160,6 +160,14 @@ final class SettingsWindowController: NSWindowController {
         how.preferredMaxLayoutWidth = Self.contentWidth - 48
         root.addArrangedSubview(how)
 
+        // Author follow link
+        let follow = NSButton(
+            title: "Follow @nsphin on X",
+            target: self, action: #selector(followAuthorClicked))
+        follow.bezelStyle = .inline
+        follow.controlSize = .small
+        root.addArrangedSubview(follow)
+
         // Footer
         let done = NSButton(title: "Done", target: self, action: #selector(doneClicked))
         done.keyEquivalent = "\r"
@@ -247,5 +255,11 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func doneClicked() {
         window?.close()
+    }
+
+    @objc private func followAuthorClicked() {
+        if let url = URL(string: "https://x.com/nsphin") {
+            NSWorkspace.shared.open(url)
+        }
     }
 }
