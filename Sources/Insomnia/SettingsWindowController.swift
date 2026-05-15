@@ -13,6 +13,7 @@ protocol SettingsWindowDelegate: AnyObject {
     func settingsDidSetOnACOnly(_ enabled: Bool)
     func settingsDidToggleAgent(_ agent: AgentKind, followed: Bool)
     func settingsDidToggleLaunchAtLogin(_ enabled: Bool)
+    func settingsDidSetPreventLidClosedSleep(_ enabled: Bool)
 }
 
 /// What the window needs to render itself. Mirrors the relevant fields of
@@ -25,6 +26,13 @@ struct SettingsState {
     let gracePeriodSeconds: TimeInterval
     let onACOnly: Bool
     let launchAtLoginEnabled: Bool
+    /// System-wide `pmset -a disablesleep` flag. Read from `pmset -g`, not
+    /// from any app-side preference, so it stays in sync if the user flips
+    /// it from the terminal.
+    let preventLidClosedSleep: Bool
+    /// Most recent reconcile decision — drives the Status section. `nil`
+    /// only before the first reconcile has run.
+    let currentDecision: ReconcileDecision?
 }
 
 final class SettingsWindowController: NSWindowController {
@@ -39,6 +47,9 @@ final class SettingsWindowController: NSWindowController {
     private var graceMenu: NSPopUpButton!
     private var onACCheckbox: NSButton!
     private var launchAtLoginCheckbox: NSButton!
+    private var preventLidSleepCheckbox: NSButton!
+    private var statusHeadline: NSTextField?
+    private var statusSessionsStack: NSStackView?
 
     private static let gracePresets: [(label: String, seconds: TimeInterval)] = [
         ("1 minute", 60), ("5 minutes", 300), ("10 minutes", 600),
@@ -88,6 +99,40 @@ final class SettingsWindowController: NSWindowController {
         }
         onACCheckbox.state = state.onACOnly ? .on : .off
         launchAtLoginCheckbox.state = state.launchAtLoginEnabled ? .on : .off
+        preventLidSleepCheckbox.state = state.preventLidClosedSleep ? .on : .off
+        renderStatus(from: state.currentDecision)
+    }
+
+    private func renderStatus(from decision: ReconcileDecision?) {
+        guard let statusHeadline, let statusSessionsStack else { return }
+        let awake = decision?.shouldKeepAwake ?? false
+        statusHeadline.stringValue = awake ? "Keeping Mac awake" : "Idle — Mac can sleep"
+        statusHeadline.textColor = awake ? .systemGreen : .secondaryLabelColor
+
+        for view in statusSessionsStack.arrangedSubviews {
+            statusSessionsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        let sessions = decision?.activeSessions ?? []
+        statusSessionsStack.isHidden = sessions.isEmpty
+        for session in sessions {
+            let label = NSTextField(labelWithString: Self.sessionLine(session))
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .secondaryLabelColor
+            statusSessionsStack.addArrangedSubview(label)
+        }
+    }
+
+    private static func sessionLine(_ session: ActiveSession) -> String {
+        let dir = session.cwd.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "—"
+        let stateText: String
+        switch session.displayState {
+        case .working:
+            stateText = "working"
+        case .grace(let seconds):
+            stateText = String(format: "grace %d:%02d", seconds / 60, seconds % 60)
+        }
+        return "  \(session.agent.displayName) · \(dir) · \(stateText)"
     }
 
     /// Bring the window to the front. Must be called on the main thread.
@@ -107,8 +152,7 @@ final class SettingsWindowController: NSWindowController {
         root.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
         root.translatesAutoresizingMaskIntoConstraints = false
 
-        // Header — only in onboarding mode; settings mode relies on the
-        // window title bar so we don't repeat "Insomnia Settings" twice.
+        // Onboarding header (settings mode relies on the window title).
         if mode == .onboarding {
             let title = NSTextField(labelWithString: "Welcome to Insomnia")
             title.font = .systemFont(ofSize: 18, weight: .semibold)
@@ -122,6 +166,22 @@ final class SettingsWindowController: NSWindowController {
             blurb.textColor = .secondaryLabelColor
             blurb.preferredMaxLayoutWidth = Self.contentWidth - 48
             root.addArrangedSubview(blurb)
+        } else {
+            // Status section — current decision + active sessions. Live-updates
+            // on every reconcile via `refresh(state:)`.
+            root.addArrangedSubview(sectionHeader("Status"))
+            let headline = NSTextField(labelWithString: "Idle — Mac can sleep")
+            headline.font = .systemFont(ofSize: 13, weight: .medium)
+            self.statusHeadline = headline
+            root.addArrangedSubview(headline)
+
+            let sessions = NSStackView()
+            sessions.orientation = .vertical
+            sessions.alignment = .leading
+            sessions.spacing = 2
+            sessions.isHidden = true
+            self.statusSessionsStack = sessions
+            root.addArrangedSubview(sessions)
         }
 
         // Agents section
@@ -143,6 +203,25 @@ final class SettingsWindowController: NSWindowController {
             action: #selector(launchAtLoginToggled),
             on: state.launchAtLoginEnabled)
         root.addArrangedSubview(launchAtLoginCheckbox)
+
+        // Closed-lid section — its own block so the caveats are visible
+        // in onboarding too, not buried under "Behavior".
+        root.addArrangedSubview(sectionHeader("Closed-lid operation"))
+        let lidBlurb = NSTextField(wrappingLabelWithString:
+            "Insomnia's idle-sleep assertion doesn't override clamshell sleep "
+            + "on its own. Enabling this sets the system-wide `pmset -a "
+            + "disablesleep 1` flag (asks for your admin password once) so your "
+            + "Mac stays awake on AC with the lid shut. It's a persistent macOS "
+            + "setting — uncheck here to revert.")
+        lidBlurb.font = .systemFont(ofSize: 12)
+        lidBlurb.textColor = .secondaryLabelColor
+        lidBlurb.preferredMaxLayoutWidth = Self.contentWidth - 48
+        root.addArrangedSubview(lidBlurb)
+        preventLidSleepCheckbox = makeCheckbox(
+            title: "Prevent sleep when the lid is closed",
+            action: #selector(preventLidSleepToggled),
+            on: state.preventLidClosedSleep)
+        root.addArrangedSubview(preventLidSleepCheckbox)
 
         // How it works
         root.addArrangedSubview(sectionHeader("How it works"))
@@ -253,7 +332,60 @@ final class SettingsWindowController: NSWindowController {
         delegate?.settingsDidToggleLaunchAtLogin(sender.state == .on)
     }
 
+    @objc private func preventLidSleepToggled(_ sender: NSButton) {
+        let wantEnable = sender.state == .on
+        if wantEnable {
+            let alert = NSAlert()
+            alert.messageText = "Prevent sleep when the lid is closed?"
+            alert.informativeText = """
+                This sets the system-wide `pmset -a disablesleep 1` flag — \
+                a macOS setting, not an Insomnia assertion. On AC power your \
+                Mac will stay awake with the lid shut. On battery it will \
+                still sleep.
+
+                This is persistent: it survives reboots and stays on until \
+                you uncheck this box (or run `sudo pmset -a disablesleep 0` \
+                yourself). macOS will prompt for your admin password.
+                """
+            alert.addButton(withTitle: "Enable")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() != .alertFirstButtonReturn {
+                sender.state = .off
+                return
+            }
+        }
+        delegate?.settingsDidSetPreventLidClosedSleep(wantEnable)
+    }
+
     @objc private func doneClicked() {
+        // Final onboarding step: if the user hasn't enabled closed-lid mode,
+        // explicitly offer it before closing. Skipped in settings mode (the
+        // checkbox is enough for an existing user).
+        if mode == .onboarding, !state.preventLidClosedSleep {
+            offerClamshellThenClose()
+            return
+        }
+        window?.close()
+    }
+
+    private func offerClamshellThenClose() {
+        let alert = NSAlert()
+        alert.messageText = "One more thing — prevent sleep when the lid is closed?"
+        alert.informativeText = """
+            Insomnia's idle-sleep assertion doesn't override clamshell sleep \
+            on its own. Enabling this sets the system-wide `pmset -a \
+            disablesleep 1` flag — your Mac stays awake on AC power with the \
+            lid shut. macOS will ask for your admin password once.
+
+            This is a persistent macOS setting (survives reboots). You can \
+            turn it off anytime from Settings.
+            """
+        alert.addButton(withTitle: "Enable")
+        alert.addButton(withTitle: "Skip")
+        if alert.runModal() == .alertFirstButtonReturn {
+            preventLidSleepCheckbox.state = .on
+            delegate?.settingsDidSetPreventLidClosedSleep(true)
+        }
         window?.close()
     }
 

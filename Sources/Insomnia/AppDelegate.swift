@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: ReconcileTimer?
     private var powerSourceMonitor: PowerSourceMonitor?
     private var settingsWindow: SettingsWindowController?
+    private var lastDecision: ReconcileDecision?
 
     /// Persisted preferences (grace period, caps, on-AC-only).
     private var config = Config.load()
@@ -73,7 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presentAgents: present,
             gracePeriodSeconds: config.gracePeriodSeconds,
             onACOnly: config.onACOnly,
-            launchAtLoginEnabled: LoginItem.isEnabled)
+            launchAtLoginEnabled: LoginItem.isEnabled,
+            preventLidClosedSleep: ClamshellSetting.isEnabled(),
+            currentDecision: lastDecision)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -107,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for url in decision.filesToDelete {
             sessionStore.delete(url)
         }
+        lastDecision = decision
         statusController.render(MenuState(
             decision: decision,
             manualOverride: manualOverride,
@@ -207,5 +211,24 @@ extension AppDelegate: SettingsWindowDelegate {
         // Re-render reflects the real SMAppService status (which may still be
         // "off" if macOS requires approval in System Settings).
         reconcile()
+    }
+
+    func settingsDidSetPreventLidClosedSleep(_ enabled: Bool) {
+        // osascript spawns a modal password dialog — run off the main thread
+        // so the app stays responsive, then re-reconcile from ground truth.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try ClamshellSetting.setEnabled(enabled)
+            } catch ClamshellSetting.Error.userCancelled {
+                // Silent: the checkbox snaps back from `pmset -g` on next refresh.
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    self?.presentError(error, doing: enabled
+                        ? "enable clamshell sleep prevention"
+                        : "disable clamshell sleep prevention")
+                }
+            }
+            DispatchQueue.main.async { [weak self] in self?.reconcile() }
+        }
     }
 }

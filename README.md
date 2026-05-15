@@ -95,15 +95,72 @@ The menu bar item shows the current state and a small set of controls:
 The Settings window is also what appears on first launch as a short
 onboarding — pick your agents and you're done.
 
-## Limitations
+## Where it works (and where it doesn't)
 
-- **Closing a laptop lid still sleeps the Mac.** No app can override clamshell
-  sleep. Insomnia only blocks the *idle* sleep timer; choosing Sleep from the
-  Apple menu or pressing the power button also still works — by design.
-- **The app must be running** to hold the assertion. It's a menu bar app — turn
-  on *Launch at Login* and forget about it.
+Under the hood Insomnia holds the same IOKit `PreventUserIdleSystemSleep`
+assertion that Apple's built-in `caffeinate -i` uses. It's a "smart
+`caffeinate`" that knows when your agent is actually working.
+
+### ✅ Insomnia keeps the Mac awake
+
+| Scenario | Result |
+|---|---|
+| Lid open, no input for 10/15/30 min, agent working | Stays awake. Display can still sleep. |
+| Multiple agents running at once | Awake while *any* followed session is working; grace period waits for the last one. |
+| On AC power | Works. |
+| On battery | Works by default; flip *Only on AC Power* in Settings if you'd rather not drain the battery. |
+| Network drops / Wi-Fi sleeps | Insomnia doesn't manage networking — Power Nap and Wi-Fi-on-sleep are separate macOS settings. |
+
+### ❌ Insomnia can *not* help
+
+| Scenario | Why |
+|---|---|
+| Laptop lid closed (clamshell sleep) | The IOKit assertion Insomnia uses doesn't override clamshell. Two real workarounds below — neither requires Insomnia itself. |
+| Sleep from Apple menu, or pressing the power button | User-initiated sleep is intentional and bypasses every assertion — by design. |
+| Battery empty | Obvious. The Mac will sleep before it powers off. |
+| Insomnia.app is quit, or Mac restarts | The assertion lives with the process. Turn on *Launch at Login* so it comes back. |
+| Display sleep (screen goes black) | Insomnia only blocks *system* sleep, not the display. This is deliberate so you can shut your eyes while the agent works. |
+| Agent exits without firing its end hook | Picked up by the 10-second reconcile timer, the PID liveness check, and an absolute safety cap — released within ~10 s in practice, and a hard cap of 4 hours even in pathological cases. |
+
+### Closed-lid (clamshell) workarounds
+
+Insomnia itself can't beat clamshell — the IOKit assertion lives in the wrong
+layer. But two macOS-native tricks do, and either one combines fine with
+Insomnia:
+
+**Option A — AC power + an external display attached.** Any HDMI/USB-C
+display works, including a $5 HDMI dummy plug. macOS keeps the system awake
+on its own when that combination is present, no settings to flip. The Apple-
+sanctioned recipe.
+
+**Option B — `sudo pmset -a disablesleep 1`.** Apple Silicon respects this
+global preference: on AC power, the Mac stays awake with the lid closed even
+without an external display. To undo:
+
+```sh
+sudo pmset -a disablesleep 1   # prevent sleep with lid closed (AC only)
+sudo pmset -a disablesleep 0   # back to default
+```
+
+Caveats: it's a **system-wide, persistent** setting (survives reboots), not
+scoped to Insomnia or a single agent session — so remember to flip it off
+when you're done. On battery the Mac will sleep anyway. And the built-in
+display can't render with the lid shut, so this is for "run overnight on
+charger" scenarios, not "use the laptop closed."
+
+### How is this different from `caffeinate`?
+
+`caffeinate -i &` holds the assertion until you remember to kill it.
+Insomnia holds it **only** while your agent's hook reports *working*, plus a
+configurable grace period, so the Mac sleeps normally the moment your work
+is done. You set it up once and forget about it.
+
+## Notes
+
 - **Unsigned in v1** — no Apple Developer notarization yet (see
   [docs/GATEKEEPER.md](docs/GATEKEEPER.md)).
+- The app must be running to hold the assertion. Turn on *Launch at Login*
+  and forget about it.
 
 ## Disclaimer
 
