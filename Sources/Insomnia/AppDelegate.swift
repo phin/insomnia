@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var watcher: SessionWatcher?
     private var timer: ReconcileTimer?
     private var powerSourceMonitor: PowerSourceMonitor?
+    private var settingsWindow: SettingsWindowController?
 
     /// Persisted preferences (grace period, caps, on-AC-only).
     private var config = Config.load()
@@ -40,8 +41,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         powerSourceMonitor?.start()
 
         reconcile()
-        FirstRunController.runIfNeeded()
+        FirstRunController.runIfNeeded { [weak self] in self?.openSettings(mode: .onboarding) }
         reconcile()   // reflect anything first-run setup just installed
+    }
+
+    /// Open (or focus) the settings window in the given mode.
+    private func openSettings(mode: SettingsWindowController.Mode) {
+        if let existing = settingsWindow {
+            existing.refresh(state: currentSettingsState())
+            existing.present()
+            return
+        }
+        let window = SettingsWindowController(
+            mode: mode,
+            state: currentSettingsState(),
+            delegate: self)
+        settingsWindow = window
+        window.present()
+    }
+
+    /// Snapshot of the data the settings window needs to render.
+    private func currentSettingsState() -> SettingsState {
+        var present: Set<AgentKind> = []
+        for agent in AgentKind.allCases {
+            if AgentIntegration.installer(for: agent).isAgentPresent {
+                present.insert(agent)
+            }
+        }
+        return SettingsState(
+            followedAgents: followedAgents(),
+            presentAgents: present,
+            gracePeriodSeconds: config.gracePeriodSeconds,
+            onACOnly: config.onACOnly,
+            launchAtLoginEnabled: LoginItem.isEnabled)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -81,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             config: config,
             followedAgents: followed,
             launchAtLoginEnabled: LoginItem.isEnabled))
+        settingsWindow?.refresh(state: currentSettingsState())
     }
 
     /// Which agents are currently followed — derived from whether each agent's
@@ -125,28 +158,37 @@ extension AppDelegate: StatusItemControllerDelegate {
         reconcile()
     }
 
-    func statusItemDidSetGracePeriod(_ seconds: TimeInterval) {
+    func statusItemDidRequestSettings() {
+        openSettings(mode: .settings)
+    }
+
+    func statusItemDidRequestQuit() {
+        powerAssertion.release()
+        NSApp.terminate(nil)
+    }
+}
+
+// MARK: - SettingsWindowDelegate
+
+extension AppDelegate: SettingsWindowDelegate {
+    func settingsDidSetGracePeriod(_ seconds: TimeInterval) {
         config.gracePeriodSeconds = seconds
         config.save()
         reconcile()
     }
 
-    func statusItemDidSetOnACOnly(_ enabled: Bool) {
+    func settingsDidSetOnACOnly(_ enabled: Bool) {
         config.onACOnly = enabled
         config.save()
         reconcile()
     }
 
-    func statusItemDidToggleAgent(_ agent: AgentKind, followed: Bool) {
+    func settingsDidToggleAgent(_ agent: AgentKind, followed: Bool) {
         let installer = AgentIntegration.installer(for: agent)
         do {
             if followed {
                 try installer.install(
                     hookBinaryPath: AgentIntegration.defaultHookBinaryPath())
-                presentInfo(
-                    "Now following \(agent.displayName)",
-                    detail: "Restart any running \(agent.displayName) sessions for "
-                        + "the hooks to take effect.")
             } else {
                 try installer.uninstall()
             }
@@ -160,15 +202,10 @@ extension AppDelegate: StatusItemControllerDelegate {
         reconcile()
     }
 
-    func statusItemDidToggleLaunchAtLogin(_ enabled: Bool) {
+    func settingsDidToggleLaunchAtLogin(_ enabled: Bool) {
         LoginItem.setEnabled(enabled)
         // Re-render reflects the real SMAppService status (which may still be
         // "off" if macOS requires approval in System Settings).
         reconcile()
-    }
-
-    func statusItemDidRequestQuit() {
-        powerAssertion.release()
-        NSApp.terminate(nil)
     }
 }

@@ -83,15 +83,16 @@ into `/Applications` for local testing.
 
 ## Usage
 
-The menu bar item shows the current state and these controls:
+The menu bar item shows the current state and a small set of controls:
 
-- **Active sessions** — each followed session with `working` or `grace m:ss`.
+- **Header** — `Keeping Mac awake` or `Idle — Mac can sleep`, plus a line per
+  active session.
 - **Keep Awake Anyway** — force the Mac awake regardless of agent activity.
-- **Allow Sleep Now** — force-allow sleep even while an agent is working.
-- **Only on AC Power** — don't hold the Mac awake on battery.
-- **Grace Period** — how long to stay awake after a turn ends (default 5 min).
-- **Follow Claude Code / Codex / Gemini CLI** — install/remove each integration.
-- **Launch at Login**.
+- **Settings…** — opens a one-page window for everything else: which agents to
+  follow, grace period, AC-only mode, launch at login.
+
+The Settings window is also what appears on first launch as a short
+onboarding — pick your agents and you're done.
 
 ## Limitations
 

@@ -15,10 +15,7 @@ struct MenuState {
 /// the policy and persists state.
 protocol StatusItemControllerDelegate: AnyObject {
     func statusItemDidSetManualOverride(_ override: ManualOverride)
-    func statusItemDidSetGracePeriod(_ seconds: TimeInterval)
-    func statusItemDidSetOnACOnly(_ enabled: Bool)
-    func statusItemDidToggleAgent(_ agent: AgentKind, followed: Bool)
-    func statusItemDidToggleLaunchAtLogin(_ enabled: Bool)
+    func statusItemDidRequestSettings()
     func statusItemDidRequestQuit()
 }
 
@@ -30,34 +27,32 @@ final class StatusItemController: NSObject {
     private var statusItem: NSStatusItem?
     private var state: MenuState?
 
-    private static let gracePresets: [(label: String, seconds: TimeInterval)] = [
-        ("1 minute", 60), ("5 minutes", 300), ("10 minutes", 600),
-        ("15 minutes", 900), ("30 minutes", 1800),
-    ]
-
     /// Create the menu bar item. Call once, after the app finishes launching.
     func install() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = Self.icon(awake: false)
+        Self.apply(awake: false, to: item.button)
         statusItem = item
     }
 
     /// Update the icon and rebuild the menu from the latest state.
     func render(_ state: MenuState) {
         self.state = state
-        statusItem?.button?.image = Self.icon(awake: state.decision.shouldKeepAwake)
+        Self.apply(awake: state.decision.shouldKeepAwake, to: statusItem?.button)
         statusItem?.menu = buildMenu(state)
     }
 
     // MARK: - Icon
 
-    private static func icon(awake: Bool) -> NSImage? {
-        let name = awake ? "eye.fill" : "eye"
-        let image = NSImage(
-            systemSymbolName: name,
-            accessibilityDescription: awake ? "Keeping Mac awake" : "Idle")
-        image?.isTemplate = true   // adapt to light/dark menu bar
-        return image
+    private static func apply(awake: Bool, to button: NSStatusBarButton?) {
+        guard let button else { return }
+        // Literal "zzZ" text glyph. Heavy weight while we're holding an awake
+        // assertion so the icon "thickens" on duty; regular when idle.
+        let weight: NSFont.Weight = awake ? .heavy : .regular
+        button.image = nil
+        button.attributedTitle = NSAttributedString(
+            string: "zzZ",
+            attributes: [.font: NSFont.systemFont(ofSize: 13, weight: weight)])
+        button.setAccessibilityLabel(awake ? "Keeping Mac awake" : "Idle")
     }
 
     // MARK: - Menu
@@ -73,64 +68,31 @@ final class StatusItemController: NSObject {
         menu.addItem(header)
 
         if !decision.activeSessions.isEmpty {
-            menu.addItem(.separator())
             for session in decision.activeSessions {
-                let item = NSMenuItem(title: Self.sessionLine(session),
+                let item = NSMenuItem(title: "  " + Self.sessionLine(session),
                                       action: nil, keyEquivalent: "")
                 item.isEnabled = false
                 menu.addItem(item)
             }
         }
 
-        // Manual overrides (mutually exclusive — a single enum value).
         menu.addItem(.separator())
         menu.addItem(check("Keep Awake Anyway", #selector(keepAwakeClicked),
                            on: state.manualOverride == .forceAwake))
-        menu.addItem(check("Allow Sleep Now", #selector(allowSleepClicked),
-                           on: state.manualOverride == .forceAllowSleep))
-
-        // Preferences.
-        menu.addItem(.separator())
-        menu.addItem(check("Only on AC Power", #selector(onACOnlyClicked),
-                           on: state.config.onACOnly))
-        let grace = NSMenuItem(title: "Grace Period", action: nil, keyEquivalent: "")
-        grace.submenu = buildGraceSubmenu(current: state.config.gracePeriodSeconds)
-        menu.addItem(grace)
-
-        // Per-agent follow toggles.
-        menu.addItem(.separator())
-        for agent in AgentKind.allCases {
-            let item = check("Follow \(agent.displayName)", #selector(followAgentClicked),
-                             on: state.followedAgents.contains(agent))
-            item.representedObject = agent
-            menu.addItem(item)
-        }
-
-        // App settings.
-        menu.addItem(.separator())
-        menu.addItem(check("Launch at Login", #selector(launchAtLoginClicked),
-                           on: state.launchAtLoginEnabled))
 
         menu.addItem(.separator())
+        let settings = NSMenuItem(title: "Settings…",
+                                  action: #selector(settingsClicked),
+                                  keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
+
         let quit = NSMenuItem(title: "Quit Insomnia",
                               action: #selector(quitClicked), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 
         return menu
-    }
-
-    private func buildGraceSubmenu(current: TimeInterval) -> NSMenu {
-        let submenu = NSMenu()
-        for preset in Self.gracePresets {
-            let item = NSMenuItem(title: preset.label,
-                                  action: #selector(gracePeriodClicked), keyEquivalent: "")
-            item.target = self
-            item.representedObject = preset.seconds
-            item.state = (abs(current - preset.seconds) < 0.5) ? .on : .off
-            submenu.addItem(item)
-        }
-        return submenu
     }
 
     /// A self-targeted checkable menu item.
@@ -160,30 +122,8 @@ final class StatusItemController: NSObject {
         delegate?.statusItemDidSetManualOverride(current == .forceAwake ? .none : .forceAwake)
     }
 
-    @objc private func allowSleepClicked() {
-        let current = state?.manualOverride ?? .none
-        delegate?.statusItemDidSetManualOverride(
-            current == .forceAllowSleep ? .none : .forceAllowSleep)
-    }
-
-    @objc private func onACOnlyClicked() {
-        delegate?.statusItemDidSetOnACOnly(!(state?.config.onACOnly ?? false))
-    }
-
-    @objc private func gracePeriodClicked(_ sender: NSMenuItem) {
-        if let seconds = sender.representedObject as? TimeInterval {
-            delegate?.statusItemDidSetGracePeriod(seconds)
-        }
-    }
-
-    @objc private func followAgentClicked(_ sender: NSMenuItem) {
-        guard let agent = sender.representedObject as? AgentKind else { return }
-        let followed = state?.followedAgents.contains(agent) ?? false
-        delegate?.statusItemDidToggleAgent(agent, followed: !followed)
-    }
-
-    @objc private func launchAtLoginClicked() {
-        delegate?.statusItemDidToggleLaunchAtLogin(!(state?.launchAtLoginEnabled ?? false))
+    @objc private func settingsClicked() {
+        delegate?.statusItemDidRequestSettings()
     }
 
     @objc private func quitClicked() {
