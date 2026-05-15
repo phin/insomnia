@@ -105,52 +105,49 @@ Under the hood Insomnia holds the same IOKit `PreventUserIdleSystemSleep`
 assertion that Apple's built-in `caffeinate -i` uses. It's a "smart
 `caffeinate`" that knows when your agent is actually working.
 
-### ✅ Insomnia keeps the Mac awake
+### ✅ What Insomnia covers
 
 | Scenario | Result |
 |---|---|
 | Lid open, no input for 10/15/30 min, agent working | Stays awake. Display can still sleep. |
 | Multiple agents running at once | Awake while *any* followed session is working; grace period waits for the last one. |
-| On AC power | Works. |
-| On battery | Works by default; flip *Only on AC Power* in Settings if you'd rather not drain the battery. |
-| Network drops / Wi-Fi sleeps | Insomnia doesn't manage networking — Power Nap and Wi-Fi-on-sleep are separate macOS settings. |
+| Lid **closed** on AC power | Stays awake when *Prevent sleep when the lid is closed* is enabled in Settings (one-time admin prompt — flips `pmset -a disablesleep 1`). |
+| On battery | Idle-sleep blocking works; closed-lid mode doesn't (macOS forces sleep on battery regardless). Flip *Only on AC Power* in Settings if you'd rather not drain the battery at all. |
+| Agent exits without firing its end hook | Picked up by the 10-second reconcile timer, the PID liveness check, and an absolute safety cap — released within ~10 s in practice, and a hard cap of 4 hours even in pathological cases. |
 
-### ❌ Insomnia can *not* help
+### ❌ What Insomnia can't cover
 
 | Scenario | Why |
 |---|---|
-| Laptop lid closed (clamshell sleep) | The IOKit assertion Insomnia uses doesn't override clamshell. Two real workarounds below — neither requires Insomnia itself. |
+| Lid closed **on battery** | macOS enforces sleep for safety regardless of any assertion or `pmset` flag. |
 | Sleep from Apple menu, or pressing the power button | User-initiated sleep is intentional and bypasses every assertion — by design. |
 | Battery empty | Obvious. The Mac will sleep before it powers off. |
-| Insomnia.app is quit, or Mac restarts | The assertion lives with the process. Turn on *Launch at Login* so it comes back. |
+| Insomnia.app is quit, or Mac restarts | The IOKit assertion lives with the process. Turn on *Launch at Login* so it comes back. The closed-lid `pmset` flag, by contrast, *does* survive reboots — it's a system-wide macOS setting. |
 | Display sleep (screen goes black) | Insomnia only blocks *system* sleep, not the display. This is deliberate so you can shut your eyes while the agent works. |
-| Agent exits without firing its end hook | Picked up by the 10-second reconcile timer, the PID liveness check, and an absolute safety cap — released within ~10 s in practice, and a hard cap of 4 hours even in pathological cases. |
+| Network drops / Wi-Fi sleeps | Insomnia doesn't manage networking — Power Nap and Wi-Fi-on-sleep are separate macOS settings. |
 
-### Closed-lid (clamshell) workarounds
+### Closed-lid (clamshell) operation
 
-Insomnia itself can't beat clamshell — the IOKit assertion lives in the wrong
-layer. But two macOS-native tricks do, and either one combines fine with
-Insomnia:
+Insomnia handles this directly. Open **Settings…**, scroll to *Closed-lid
+operation*, tick **Prevent sleep when the lid is closed**, and enter your
+admin password when macOS prompts — that's the whole setup. Under the hood
+it sets the system-wide `pmset -a disablesleep 1` flag, which Apple Silicon
+respects on AC power. The first-run onboarding also asks about this
+explicitly so it isn't easy to miss.
 
-**Option A — AC power + an external display attached.** Any HDMI/USB-C
-display works, including a $5 HDMI dummy plug. macOS keeps the system awake
-on its own when that combination is present, no settings to flip. The Apple-
-sanctioned recipe.
+Two things to know:
 
-**Option B — `sudo pmset -a disablesleep 1`.** Apple Silicon respects this
-global preference: on AC power, the Mac stays awake with the lid closed even
-without an external display. To undo:
+- **AC only.** On battery, macOS forces sleep regardless. Plug in for
+  closed-lid work.
+- **Persistent.** The flag is a system-wide macOS setting and survives
+  reboots — turning it off here (or running `sudo pmset -a disablesleep 0`)
+  is the only way to revert. Useful: even if Insomnia.app is quit, your Mac
+  still stays awake with the lid shut until you flip it back.
 
-```sh
-sudo pmset -a disablesleep 1   # prevent sleep with lid closed (AC only)
-sudo pmset -a disablesleep 0   # back to default
-```
-
-Caveats: it's a **system-wide, persistent** setting (survives reboots), not
-scoped to Insomnia or a single agent session — so remember to flip it off
-when you're done. On battery the Mac will sleep anyway. And the built-in
-display can't render with the lid shut, so this is for "run overnight on
-charger" scenarios, not "use the laptop closed."
+If you'd rather not flip a system flag, the older Apple-sanctioned recipe
+still works: **AC power + an external display attached** (a $5 HDMI dummy
+plug is fine). macOS keeps the system awake on its own and Insomnia isn't
+involved at all.
 
 ### How is this different from `caffeinate`?
 
