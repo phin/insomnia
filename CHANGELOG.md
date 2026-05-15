@@ -3,6 +3,32 @@
 All notable changes to Insomnia are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.2.0
+
+### Added
+
+- One-page **Settings** window for picking which agents to follow, grace
+  period, AC-only mode, and Launch at Login. Doubles as a friendly first-run
+  onboarding screen, replacing the previous NSAlert prompt.
+- App icon (`AppIcon.icns`) — proper Finder / About / Spotlight icon.
+- "How it works" section inside Settings, and a Follow @nsphin on X link.
+
+### Changed
+
+- **Slimmed the menu bar menu** to just status header, active sessions,
+  *Keep Awake Anyway*, *Settings…*, and *Quit*. Everything else (agent
+  toggles, grace period, AC-only, Launch at Login) moved to the Settings
+  window.
+- **Menu bar indicator** is now a `zzZ` text glyph that bumps to heavy weight
+  while an awake assertion is held, replacing the `cup.and.saucer` SF Symbol.
+- README — added a hero image and updated copy to match the new menu and
+  onboarding flow.
+
+### Removed
+
+- *Allow Sleep Now* manual override. *Keep Awake Anyway* covers the common
+  case; uninstalling an agent or quitting Insomnia covers the rest.
+
 ## 0.1.0
 
 First release.

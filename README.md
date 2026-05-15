@@ -48,9 +48,10 @@ an IOKit `PreventUserIdleSystemSleep` assertion.
 | **Codex CLI** | `[hooks]` + `codex_hooks` feature | `~/.codex/config.toml` |
 | **Gemini CLI** | hooks | `~/.gemini/settings.json` |
 
-You pick which agents to follow from the menu bar. Insomnia installs and removes
-each integration for you (and never clobbers your existing config — see
-[docs/HOOKS.md](docs/HOOKS.md)).
+You pick which agents to follow in the Settings window (also shown on first
+launch as a short onboarding). Insomnia installs and removes each integration
+for you, and never clobbers your existing config — see
+[docs/HOOKS.md](docs/HOOKS.md).
 
 ## Install
 
@@ -59,12 +60,12 @@ each integration for you (and never clobbers your existing config — see
 2. Move `Insomnia.app` to `/Applications`.
 3. **First launch:** because the app isn't notarized, right-click it → **Open** →
    **Open**. You only do this once. See [docs/GATEKEEPER.md](docs/GATEKEEPER.md).
-4. On first run, Insomnia offers to set up the integration for whichever agents
-   it detects. You can also toggle agents anytime from the menu (**Follow …**).
+4. On first run, the Settings window opens so you can pick which agents to
+   follow. You can change this anytime from the menu bar's **Settings…** item.
 5. **Restart any running agent sessions** so they pick up the new hooks.
 
-That's it — an eye icon appears in your menu bar. It opens fully when Insomnia
-is keeping the Mac awake.
+That's it — a `zzZ` indicator appears in your menu bar. It bumps to a heavier
+weight when Insomnia is holding an awake assertion.
 
 ## Build from source
 
@@ -116,8 +117,8 @@ risk**. See [LICENSE](LICENSE).
 
 ## Uninstall
 
-1. From the menu, turn off **Follow …** for each agent (removes the hooks), or
-   run `insomnia-hook uninstall`.
+1. Open **Settings…** from the menu and uncheck each followed agent (removes
+   the hooks), or run `insomnia-hook uninstall`.
 2. Quit Insomnia and delete `Insomnia.app`.
 3. Delete `~/Library/Application Support/Insomnia/` if you want to remove its
    state and config.
